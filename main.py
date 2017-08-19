@@ -17,6 +17,39 @@ else:
     print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
 
 
+def custom_init(shape, dtype=tf.float32, partition_info=None, seed=0):
+    """
+    Custom tensor initializer for the conv2d and conv2d_transpose layers.
+    :param shape: Shape of the tensor
+    :param dtype: Data type of the tensor
+    :param partition_info: Partition info
+    :param seed: The seed of the random generator
+    :return: A tensor of the given shape with random numbers
+    """
+    return tf.random_normal(shape, dtype=dtype, seed=seed)
+
+
+def fcn_1x1(layer_out, num_classes):
+    """
+    A 1x1 convolution layer.
+    :param layer_out: The output of the previous layer
+    :param num_classes: Number of output classes
+    :return: A 1x1 convolution layer
+    """
+    return tf.layers.conv2d(layer_out, num_classes, kernel_size=1, strides=1, kernel_initializer=custom_init)
+
+
+def fcn_upsample(layer_out, num_classes, scale=2):
+    """
+    An upsampling convolution layer.
+    :param layer_out: The output of the previous layer
+    :param num_classes: Number of output classes
+    :param scale: Sample factor (2x, 4x, etc)
+    :return: An upsample layer
+    """
+    return tf.layers.conv2d_transpose(layer_out, num_classes, kernel_size=scale, strides=scale, kernel_initializer=custom_init)
+
+
 def load_vgg(sess, vgg_path):
     """
     Load Pretrained VGG Model into TensorFlow.
@@ -34,11 +67,13 @@ def load_vgg(sess, vgg_path):
     vgg_layer7_out_tensor_name = 'layer7_out:0'
 
     tf.saved_model.loader.load(sess, [vgg_tag], vgg_path)
-    image_input = tf.get_default_graph().get_tensor_by_name(vgg_input_tensor_name)
-    keep_prob = tf.get_default_graph().get_tensor_by_name(vgg_keep_prob_tensor_name)
-    layer3_out = tf.get_default_graph().get_tensor_by_name(vgg_layer3_out_tensor_name)
-    layer4_out = tf.get_default_graph().get_tensor_by_name(vgg_layer4_out_tensor_name)
-    layer7_out = tf.get_default_graph().get_tensor_by_name(vgg_layer7_out_tensor_name)
+    graph = tf.get_default_graph()
+
+    image_input = graph.get_tensor_by_name(vgg_input_tensor_name)
+    keep_prob = graph.get_tensor_by_name(vgg_keep_prob_tensor_name)
+    layer3_out = graph.get_tensor_by_name(vgg_layer3_out_tensor_name)
+    layer4_out = graph.get_tensor_by_name(vgg_layer4_out_tensor_name)
+    layer7_out = graph.get_tensor_by_name(vgg_layer7_out_tensor_name)
 
     return image_input, keep_prob, layer3_out, layer4_out, layer7_out
 tests.test_load_vgg(load_vgg, tf)
@@ -53,8 +88,16 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     :param num_classes: Number of classes to classify
     :return: The Tensor for the last layer of output
     """
-    # TODO: Implement function
-    return None
+    # DONE: Implement function
+    fcn3_1x1 = fcn_1x1(vgg_layer3_out, num_classes)
+    fcn4_1x1 = fcn_1x1(vgg_layer4_out, num_classes)
+    fcn7_1x1 = fcn_1x1(vgg_layer7_out, num_classes)
+
+    fcn7_2x = fcn_upsample(fcn7_1x1, num_classes, 2)
+    fcn47_sum = tf.add(fcn4_1x1, fcn7_2x)
+    fcn47_2x = fcn_upsample(fcn47_sum, num_classes, 2)
+
+    return tf.add(fcn3_1x1, fcn47_2x, name='last_layer')
 tests.test_layers(layers)
 
 
