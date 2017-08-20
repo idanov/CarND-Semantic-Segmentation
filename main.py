@@ -1,10 +1,14 @@
+#!/usr/bin/env python
+
+import argparse
 import os.path
-import tensorflow as tf
-import helper
 import warnings
 from distutils.version import LooseVersion
-import project_tests as tests
 
+import tensorflow as tf
+
+import helper
+import project_tests as tests
 
 # Check TensorFlow Version
 assert LooseVersion(tf.__version__) >= LooseVersion('1.0'), 'Please use TensorFlow version 1.0 or newer.  You are using {}'.format(tf.__version__)
@@ -17,18 +21,6 @@ else:
     print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
 
 
-def custom_init(shape, dtype=tf.float32, partition_info=None, seed=0):
-    """
-    Custom tensor initializer for the conv2d and conv2d_transpose layers.
-    :param shape: Shape of the tensor
-    :param dtype: Data type of the tensor
-    :param partition_info: Partition info
-    :param seed: The seed of the random generator
-    :return: A tensor of the given shape with random numbers
-    """
-    return tf.random_normal(shape, dtype=dtype, seed=seed)
-
-
 def fcn_1x1(layer_out, num_classes):
     """
     A 1x1 convolution layer.
@@ -36,18 +28,20 @@ def fcn_1x1(layer_out, num_classes):
     :param num_classes: Number of output classes
     :return: A 1x1 convolution layer
     """
-    return tf.layers.conv2d(layer_out, num_classes, kernel_size=1, strides=1, kernel_initializer=custom_init)
+    return tf.layers.conv2d(layer_out, num_classes, kernel_size=(1, 1), strides=(1, 1))
 
 
-def fcn_upsample(layer_out, num_classes, scale=2):
+def fcn_upsample(layer_out, num_classes, k_size, stride):
     """
     An upsampling convolution layer.
     :param layer_out: The output of the previous layer
     :param num_classes: Number of output classes
-    :param scale: Sample factor (2x, 4x, etc)
+    :param k_size: Kernel size
+    :param stride: Stride size
     :return: An upsample layer
     """
-    return tf.layers.conv2d_transpose(layer_out, num_classes, kernel_size=scale, strides=scale, kernel_initializer=custom_init)
+    return tf.layers.conv2d_transpose(layer_out, num_classes,
+                                      kernel_size=(k_size, k_size), strides=(stride, stride), padding='same')
 
 
 def load_vgg(sess, vgg_path):
@@ -93,11 +87,13 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     fcn4_1x1 = fcn_1x1(vgg_layer4_out, num_classes)
     fcn7_1x1 = fcn_1x1(vgg_layer7_out, num_classes)
 
-    fcn7_2x = fcn_upsample(fcn7_1x1, num_classes, 2)
+    fcn7_2x = fcn_upsample(fcn7_1x1, num_classes, 4, 2)
     fcn47_sum = tf.add(fcn4_1x1, fcn7_2x)
-    fcn47_2x = fcn_upsample(fcn47_sum, num_classes, 2)
+    fcn47_2x = fcn_upsample(fcn47_sum, num_classes, 4, 2)
 
-    return tf.add(fcn3_1x1, fcn47_2x, name='last_layer')
+    fcn347_sum = tf.add(fcn3_1x1, fcn47_2x)
+    fcn347_2x = fcn_upsample(fcn347_sum, num_classes, 16, 8)
+    return fcn347_2x
 tests.test_layers(layers)
 
 
@@ -111,10 +107,10 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     :return: Tuple of (logits, train_op, cross_entropy_loss)
     """
     # DONE: Implement function
-    logits = tf.nn.sigmoid(nn_last_layer, name='logits')
+    logits = tf.nn.sigmoid(tf.reshape(nn_last_layer, [-1, num_classes]), name='logits')
     cross_entropy_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=correct_label, logits=logits))
     train_op = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy_loss)
-    return tf.reshape(logits, [-1, num_classes]), train_op, cross_entropy_loss
+    return logits, train_op, cross_entropy_loss
 tests.test_optimize(optimize)
 
 
@@ -134,21 +130,25 @@ def train_nn(sess: tf.Session, epochs, batch_size, get_batches_fn, train_op, cro
     :param learning_rate: TF Placeholder for learning rate
     """
     # DONE: Implement function
-    for i in range(epochs):
-        print("Epoch {}...".format(i))
+    sess.run(tf.global_variables_initializer())
+    for epoch in range(epochs):
+        print("Starting epoch {}...".format(epoch))
+        batch_idx = 0
+        loss = 1.
         for batch_x, batch_y in get_batches_fn(batch_size):
             feed = {
-                learning_rate: 1e-4,
+                learning_rate: 1e-3,
                 keep_prob: 0.5,
                 input_image: batch_x,
                 correct_label: batch_y
             }
-            result, loss = sess.run([train_op, cross_entropy_loss], feed_dict=feed)
-            print("Batch loss: {}".format(loss))
+            _, loss = sess.run([train_op, cross_entropy_loss], feed_dict=feed)
+            batch_idx = batch_idx + 1
+        print(" => Epoch: {} | loss: {}".format(epoch, loss))
 tests.test_train_nn(train_nn)
 
 
-def run():
+def run(num_epochs=3, batch_size=16):
     num_classes = 2
     image_shape = (160, 576)
     data_dir = './data'
@@ -162,6 +162,8 @@ def run():
     # You'll need a GPU with at least 10 teraFLOPS to train on.
     #  https://www.cityscapes-dataset.com/
 
+    print("=====================")
+    print("Start training with {} epochs and batch size of {}...".format(num_epochs, batch_size))
     with tf.Session() as sess:
         # Path to vgg model
         vgg_path = os.path.join(data_dir, 'vgg')
@@ -171,15 +173,27 @@ def run():
         # OPTIONAL: Augment Images for better results
         #  https://datascience.stackexchange.com/questions/5224/how-to-prepare-augment-images-for-neural-network
 
-        # TODO: Build NN using load_vgg, layers, and optimize function
+        correct_label = tf.placeholder(tf.float32, [None, None, None, num_classes])
+        learning_rate = tf.placeholder(tf.float32)
 
-        # TODO: Train NN using the train_nn function
+        # DONE: Build NN using load_vgg, layers, and optimize function
+        input_image, keep_prob, layer3_out, layer4_out, layer7_out = load_vgg(sess, vgg_path)
+        last_layer = layers(layer3_out, layer4_out, layer7_out, num_classes)
+        logits, train_op, cross_entropy_loss = optimize(last_layer, correct_label, learning_rate, num_classes)
 
-        # TODO: Save inference data using helper.save_inference_samples
-        #  helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, input_image)
+        # DONE: Train NN using the train_nn function
+        train_nn(sess, num_epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss,
+                 input_image, correct_label, keep_prob, learning_rate)
+
+        # DONE: Save inference data using helper.save_inference_samples
+        helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, input_image)
 
         # OPTIONAL: Apply the trained model to a video
 
 
 if __name__ == '__main__':
-    run()
+    parser = argparse.ArgumentParser(description='Train a semantic segmentation model')
+    parser.add_argument('--epochs', type=int, default=3, help='Number of epochs.')
+    parser.add_argument('--batch', type=int, default=16, help='Batch size.')
+    args = parser.parse_args()
+    run(args.epochs, args.batch)
