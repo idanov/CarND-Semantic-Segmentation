@@ -118,7 +118,7 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
 tests.test_optimize(optimize)
 
 
-def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
+def train_nn(sess: tf.Session, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
              correct_label, keep_prob, learning_rate):
     """
     Train neural network and print out the loss during training.
@@ -133,8 +133,18 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     :param keep_prob: TF Placeholder for dropout keep probability
     :param learning_rate: TF Placeholder for learning rate
     """
-    # TODO: Implement function
-    pass
+    # DONE: Implement function
+    for i in range(epochs):
+        print("Epoch {}...".format(i))
+        for batch_x, batch_y in get_batches_fn(batch_size):
+            feed = {
+                learning_rate: 1e-4,
+                keep_prob: 0.5,
+                input_image: batch_x,
+                correct_label: batch_y
+            }
+            result, loss = sess.run([train_op, cross_entropy_loss], feed_dict=feed)
+            print("Batch loss: {}".format(loss))
 tests.test_train_nn(train_nn)
 
 
