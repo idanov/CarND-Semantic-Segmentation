@@ -15,7 +15,7 @@ def test_safe(func):
     def func_wrapper(*args):
         with tf.Graph().as_default():
             result = func(*args)
-        print('Tests Passed')
+        print(func.__name__, ': Tests Passed')
         return result
 
     return func_wrapper
