@@ -151,7 +151,7 @@ def train_nn(sess: tf.Session, epochs, batch_size, get_batches_fn, train_op, cro
 tests.test_train_nn(train_nn)
 
 
-def run(num_epochs=30, batch_size=4):
+def run(num_epochs=5, batch_size=4):
     num_classes = 2
     image_shape = (160, 576)
     data_dir = './data'
@@ -196,7 +196,7 @@ def run(num_epochs=30, batch_size=4):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a semantic segmentation model')
-    parser.add_argument('--epochs', type=int, default=30, help='Number of epochs.')
+    parser.add_argument('--epochs', type=int, default=5, help='Number of epochs.')
     parser.add_argument('--batch', type=int, default=4, help='Batch size.')
     args = parser.parse_args()
     run(args.epochs, args.batch)
