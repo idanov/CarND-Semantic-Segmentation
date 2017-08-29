@@ -28,7 +28,8 @@ def fcn_1x1(layer_out, num_classes):
     :param num_classes: Number of output classes
     :return: A 1x1 convolution layer
     """
-    return tf.layers.conv2d(layer_out, num_classes, kernel_size=(1, 1), strides=(1, 1))
+    return tf.layers.conv2d(layer_out, num_classes, kernel_size=(1, 1), strides=(1, 1),
+                            kernel_initializer=tf.truncated_normal_initializer(stddev=0.01))
 
 
 def fcn_upsample(layer_out, num_classes, k_size, stride):
@@ -41,7 +42,8 @@ def fcn_upsample(layer_out, num_classes, k_size, stride):
     :return: An upsample layer
     """
     return tf.layers.conv2d_transpose(layer_out, num_classes,
-                                      kernel_size=(k_size, k_size), strides=(stride, stride), padding='same')
+                                      kernel_size=(k_size, k_size), strides=(stride, stride), padding='same',
+                                      kernel_initializer=tf.truncated_normal_initializer(stddev=0.01))
 
 
 def load_vgg(sess, vgg_path):
@@ -107,8 +109,9 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     :return: Tuple of (logits, train_op, cross_entropy_loss)
     """
     # DONE: Implement function
-    logits = tf.nn.sigmoid(tf.reshape(nn_last_layer, [-1, num_classes]), name='logits')
-    cross_entropy_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=correct_label, logits=logits))
+    logits = tf.nn.sigmoid(tf.reshape(nn_last_layer, (-1, num_classes)), name='logits')
+    labels = tf.nn.sigmoid(tf.reshape(correct_label, (-1, num_classes)), name='labels')
+    cross_entropy_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits))
     train_op = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy_loss)
     return logits, train_op, cross_entropy_loss
 tests.test_optimize(optimize)
@@ -137,8 +140,8 @@ def train_nn(sess: tf.Session, epochs, batch_size, get_batches_fn, train_op, cro
         loss = 1.
         for batch_x, batch_y in get_batches_fn(batch_size):
             feed = {
-                learning_rate: 1e-3,
-                keep_prob: 0.5,
+                learning_rate: 1e-4,
+                keep_prob: 1.,
                 input_image: batch_x,
                 correct_label: batch_y
             }
@@ -148,7 +151,7 @@ def train_nn(sess: tf.Session, epochs, batch_size, get_batches_fn, train_op, cro
 tests.test_train_nn(train_nn)
 
 
-def run(num_epochs=3, batch_size=16):
+def run(num_epochs=30, batch_size=4):
     num_classes = 2
     image_shape = (160, 576)
     data_dir = './data'
@@ -193,7 +196,7 @@ def run(num_epochs=3, batch_size=16):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a semantic segmentation model')
-    parser.add_argument('--epochs', type=int, default=3, help='Number of epochs.')
-    parser.add_argument('--batch', type=int, default=16, help='Batch size.')
+    parser.add_argument('--epochs', type=int, default=30, help='Number of epochs.')
+    parser.add_argument('--batch', type=int, default=4, help='Batch size.')
     args = parser.parse_args()
     run(args.epochs, args.batch)
