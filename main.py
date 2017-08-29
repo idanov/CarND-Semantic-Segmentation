@@ -141,7 +141,7 @@ def train_nn(sess: tf.Session, epochs, batch_size, get_batches_fn, train_op, cro
         for batch_x, batch_y in get_batches_fn(batch_size):
             feed = {
                 learning_rate: 1e-4,
-                keep_prob: 1.,
+                keep_prob: .5,
                 input_image: batch_x,
                 correct_label: batch_y
             }
